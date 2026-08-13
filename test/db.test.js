@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rm } from 'node:fs/promises';
+import { statSync } from 'node:fs';
 import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -159,5 +160,20 @@ describe('removeAccount', () => {
 
   it('is a no-op for unknown email', () => {
     assert.doesNotThrow(() => removeAccount('nobody@example.com'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// file permissions
+// ---------------------------------------------------------------------------
+
+describe('database file permissions', () => {
+  it('is not readable or writable by group or other', () => {
+    // The DB stores refresh tokens in plaintext, so it must stay owner-only.
+    // SQLite creates the file using the process umask (commonly 0644), which
+    // would otherwise leave tokens world-readable.
+    storeTokens('perms@example.com', BASE_TOKENS);
+    const mode = statSync(DB_PATH).mode & 0o777;
+    assert.equal(mode & 0o077, 0, `expected no group/other bits, got ${mode.toString(8)}`);
   });
 });
