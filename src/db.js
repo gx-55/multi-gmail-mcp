@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { chmodSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 
@@ -9,6 +10,13 @@ let db;
 function getDb() {
   if (!db) {
     db = new DatabaseSync(DB_PATH);
+    // The DB holds plaintext refresh tokens — keep it owner-only. SQLite creates
+    // the file with the process umask (typically 0644), so narrow it explicitly.
+    try {
+      chmodSync(DB_PATH, 0o600);
+    } catch {
+      // Non-fatal: a read-only or exotic filesystem shouldn't block startup
+    }
     db.exec(`
       CREATE TABLE IF NOT EXISTS accounts (
         email         TEXT PRIMARY KEY,
