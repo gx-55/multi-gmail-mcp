@@ -111,6 +111,23 @@ describe('buildRaw', () => {
     assert.ok(decoded.includes('Content-Type: text/plain; charset=UTF-8'), 'missing Content-Type');
   });
 
+  it('encodes non-ASCII subjects as RFC 2047 encoded-words', () => {
+    const subject = 'Test \u2014 la bo\u00eete est op\u00e9rationnelle';
+    const decoded = decodeRaw(
+      buildRaw({ from: 'a@x.com', to: 'b@y.com', subject, body: '' })
+    );
+    const match = decoded.match(/Subject: =\?UTF-8\?B\?(.+)\?=/);
+    assert.ok(match, 'subject is not an RFC 2047 encoded-word');
+    assert.equal(Buffer.from(match[1], 'base64').toString('utf8'), subject);
+  });
+
+  it('leaves ASCII-only subjects unencoded', () => {
+    const decoded = decodeRaw(
+      buildRaw({ from: 'a@x.com', to: 'b@y.com', subject: 'Plain subject', body: '' })
+    );
+    assert.ok(decoded.includes('Subject: Plain subject'));
+  });
+
   it('separates headers from body with \\r\\n\\r\\n', () => {
     const decoded = decodeRaw(
       buildRaw({ from: 'a@x.com', to: 'b@y.com', subject: 'Hi', body: 'Body text' })
