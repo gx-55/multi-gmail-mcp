@@ -46,13 +46,21 @@ export function extractBody(payload) {
   return '';
 }
 
+// Encodes a header value as an RFC 2047 encoded-word when it contains
+// non-ASCII characters (raw UTF-8 is not valid in message headers and
+// renders as mojibake in receiving clients).
+function encodeHeader(value) {
+  if (!value || /^[\x00-\x7F]*$/.test(value)) return value;
+  return `=?UTF-8?B?${Buffer.from(value, 'utf8').toString('base64')}?=`;
+}
+
 export function buildRaw({ from, to, cc, bcc, subject, body, inReplyTo, references }) {
   const lines = [
     `From: ${from}`,
     `To: ${to}`,
     cc ? `Cc: ${cc}` : null,
     bcc ? `Bcc: ${bcc}` : null,
-    `Subject: ${subject}`,
+    `Subject: ${encodeHeader(subject)}`,
     'Content-Type: text/plain; charset=UTF-8',
     inReplyTo ? `In-Reply-To: ${inReplyTo}` : null,
     references ? `References: ${references}` : null,
