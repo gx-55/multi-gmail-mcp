@@ -12,8 +12,8 @@
  */
 import { execSync } from 'child_process';
 import { createRequire } from 'module';
-import { listAccounts, removeAccount, storeTokens, setLabel, resolveEmail } from './db.js';
-import { initiateAuth } from './auth.js';
+import { listAccounts, removeAccount, setLabel, resolveEmail } from './db.js';
+import { initiateAuth, storeVerifiedTokens } from './auth.js';
 
 const require = createRequire(import.meta.url);
 const { version: currentVersion } = require('../package.json');
@@ -70,7 +70,12 @@ switch (command) {
       // open is optional
     }
     const tokens = await session.tokenPromise;
-    storeTokens(email, tokens, label);
+    try {
+      await storeVerifiedTokens(email, tokens, label);
+    } catch (err) {
+      console.error(`\n${err.message}`);
+      process.exit(1);
+    }
     const labelMsg = label ? ` with label "${label}"` : '';
     console.log(`\nSuccessfully authenticated ${email}${labelMsg}!`);
     break;

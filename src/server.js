@@ -4,9 +4,9 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import { listAccounts, storeTokens, removeAccount, setLabel, resolveEmail } from './db.js';
+import { listAccounts, removeAccount, setLabel, resolveEmail } from './db.js';
 import { resolveAccount } from './account-resolver.js';
-import { initiateAuth, checkAuthStatus } from './auth.js';
+import { initiateAuth, checkAuthStatus, storeVerifiedTokens } from './auth.js';
 import {
   searchEmails,
   getEmail,
@@ -381,9 +381,14 @@ export function createServer() {
             text = `No pending authentication for ${email}. Call initiate_auth first.`;
             break;
           }
-          const tokens = await session.tokenPromise;
-          storeTokens(email, tokens, session.label ?? null);
-          pendingSessions.delete(email);
+          // Drop the pending session whatever happens (timeout, wrong account), so that
+          // initiate_auth can start a fresh attempt instead of reporting one "in progress"
+          try {
+            const tokens = await session.tokenPromise;
+            await storeVerifiedTokens(email, tokens, session.label ?? null);
+          } finally {
+            pendingSessions.delete(email);
+          }
           text = `Successfully authenticated ${email}!` +
             (session.label ? ` Label: "${session.label}"` : '');
           break;

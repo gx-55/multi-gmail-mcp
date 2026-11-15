@@ -183,3 +183,73 @@ export function initiateAuth() {
     server.on('error', rejectSetup);
   });
 }
+
+// Thrown when the Google account that signed in is not the address being added
+export class AccountMismatchError extends Error {
+  constructor(expected, actual) {
+    super(
+      `Signed in as "${actual}", but the account being added is "${expected}". ` +
+        "No tokens were saved. Sign in again and pick that account in Google's account chooser, " +
+        `or add ${actual} under its own address.`
+    );
+    this.name = 'AccountMismatchError';
+    this.expected = expected;
+    this.actual = actual;
+  }
+}
+
+// The stored address becomes the From header of every message sent, so it must be the
+// address of the account that granted the tokens. Case and surrounding spaces are
+// ignored; Gmail's dot-insensitivity is not, on purpose, so that From always carries the
+// account's real address.
+export function assertSameAccount(expected, actual) {
+  const norm = value => String(value ?? '').trim().toLowerCase();
+  if (!norm(actual) || norm(expected) !== norm(actual)) {
+    throw new AccountMismatchError(expected, actual);
+  }
+}
+
+function oauthClientFor(tokens) {
+  const { clientId, clientSecret } = getClientCredentials();
+  const client = new google.auth.OAuth2(clientId, clientSecret);
+  client.setCredentials(tokens);
+  return client;
+}
+
+// Asks Gmail which account freshly granted tokens belong to (getProfile needs no extra scope)
+async function fetchTokenOwner(tokens) {
+  const gmail = google.gmail({ version: 'v1', auth: oauthClientFor(tokens) });
+  const { data } = await gmail.users.getProfile({ userId: 'me' });
+  return data.emailAddress;
+}
+
+// Withdraws a grant that will not be stored, so the wrong account is not left with an
+// orphaned "access granted" entry in its Google security settings
+async function revokeTokens(tokens) {
+  const token = tokens.refresh_token ?? tokens.access_token;
+  if (token) await oauthClientFor(tokens).revokeToken(token);
+}
+
+// Stores tokens only once Gmail confirms they belong to `email`. On a mismatch nothing is
+// stored (an existing account keeps its previous tokens), the grant is revoked on a best-
+// effort basis, and an AccountMismatchError is thrown.
+export async function storeVerifiedTokens(
+  email,
+  tokens,
+  label = null,
+  { fetchOwner = fetchTokenOwner, revoke = revokeTokens, store = storeTokens } = {}
+) {
+  const owner = await fetchOwner(tokens);
+  try {
+    assertSameAccount(email, owner);
+  } catch (err) {
+    try {
+      await revoke(tokens);
+    } catch (revokeErr) {
+      console.error(`[gmail-mcp] could not revoke the grant for ${owner}: ${revokeErr.message}`);
+    }
+    throw err;
+  }
+  store(email, tokens, label);
+  return owner;
+}
